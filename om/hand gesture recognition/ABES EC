@@ -1,0 +1,115 @@
+- 
+Gesture Recognition
+
+In this group project, you are going to build a 3D Conv model that will be able to predict the 5 gestures correctly. Please import the following libraries to get started.
+
+import numpy as np
+import os
+from scipy.misc import imread, imresize # this is deprecated
+import datetime
+import os
+
+import imageio # using as an alternative of imread as it is deprecated
+from PIL import Image # using as an alternative of imread as it is deprecated
+
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+import warnings
+warnings.filterwarnings('ignore')
+
+We set the random seed so that the results don't vary drastically.
+
+np.random.seed(30)
+import random as rn
+rn.seed(30)
+import tensorflow as tf
+tf.random.set_seed(30)
+
+In this block, you read the folder names for training and validation. You also set the batch_size here. Note that you set the batch size in such a way that you are able to use the GPU in full capacity. You keep increasing the batch size until the machine throws an error.
+
+train_doc = np.random.permutation(open('Project_data/train.csv').readlines())
+val_doc = np.random.permutation(open('Project_data/val.csv').readlines())
+
+batch_size = 64 #experiment with the batch size
+
+len(val_doc)
+
+100
+
+Generator
+
+This is one of the most important part of the code. The overall structure of the generator has been given. In the generator, you are going to preprocess the images as you have images of 2 different dimensions as well as create a batch of video frames. You have to experiment with img_idx, y,z and normalization such that you get high accuracy.
+
+def generator(source_path, folder_list, batch_size):
+    print( 'Source path = ', source_path, '; batch size =', batch_size)
+    img_idx = [0,1,2,4,6,8,10,12,14,16,18,20,22,24,26,27,28,29] #create a list of image numbers you want to use for a particular video
+    while True:
+        t = np.random.permutation(folder_list)
+        num_batches = len(source_path)//batch_size # calculate the number of batches
+        for batch in range(num_batches):
+            batch_data = np.zeros((batch_size,18,84,84,3)) # x is the number of images you use for each video, (y,z) is the final size of the input images and 3 is the number of channels RGB
+            batch_labels = np.zeros((batch_size,5)) # batch_labels is the one hot representation of the output
+            for folder in range(batch_size):
+                imgs = os.listdir(source_path+'/'+ t[folder + (batch*batch_size)].split(';')[0]) # read all the images in the folder
+                for idx,item in enumerate(img_idx):
+                    image = imageio.imread(source_path+'/'+ t[folder + (batch*batch_size)].strip().split(';')[0]+'/'+imgs[item]).astype(np.float32)
+                    
+                    #crop the images and resize them. Note that the images are of 2 different shape 
+                    #and the conv3D will throw error if the inputs in a batch have different shapes
+                    if image.shape[1] == 160:
+                        image = imresize(image[:,20:140,:],(84,84)).astype(np.float32) #cropping the (120X160) image to make (120X120)
+                    else:
+                        print("")
+                        image = imresize(image,(84,84)).astype(np.float32)
+                    # Normalizing RGB image with mean subtraction 
+                    batch_data[folder,idx,:,:,0] = image[:,:,0] - 104
+                    batch_data[folder,idx,:,:,1] = image[:,:,1] - 117
+                    batch_data[folder,idx,:,:,2] = image[:,:,2] - 123
+                    
+                batch_labels[folder, int(t[folder + (batch*batch_size)].strip().split(';')[2])] = 1
+            yield batch_data, batch_labels #you yield the batch_data and the batch_labels, remember what does yield do
+
+
+        
+        # write the code for the remaining data points which are left after full batches
+        if(len(t)%batch_size!=0):
+            batch_data = np.zeros((len(t)%batch_size,18,84,84,3)) # x is the number of images you use for each video, (y,z) is the final size of the input images and 3 is the number of channels RGB
+            batch_labels = np.zeros((len(t)%batch_size,5)) # batch_labels is the one hot representation of the output
+            for folder in range(len(t)%batch_size): # iterate over the batch_size
+                imgs = os.listdir(source_path+'/'+ t[folder + (num_batches*(len(t)%batch_size))].split(';')[0]) # read all the images in the folder
+                for idx,item in enumerate(img_idx): #  Iterate iver the frames/images of a folder to read them in
+                    image = imageio.imread(source_path+'/'+ t[folder + (num_batches*(len(t)%batch_size))].strip().split(';')[0]+'/'+imgs[item]).astype(np.float32)
+                    
+                    #crop the images and resize them. Note that the images are of 2 different shape 
+                    #and the conv3D will throw error if the inputs in a batch have different shapes
+
+                    if image.shape[1] == 160:
+                        image = imresize(image[:,20:140,:],(84,84)).astype(np.float32)
+                    else:
+                        image = imresize(image,(84,84)).astype(np.float32)
+                    # Normalizing RGB image with mean subtraction
+                    batch_data[folder,idx,:,:,0] = image[:,:,0] - 104
+                    batch_data[folder,idx,:,:,1] = image[:,:,1] - 117
+                    batch_data[folder,idx,:,:,2] = image[:,:,2] - 123
+                                        
+                batch_labels[folder, int(t[folder + (num_batches*(len(t)%batch_size))].strip().split(';')[2])] = 1
+            yield batch_data, batch_labels #you yield the batch_data and the batch_labels, remember what does yield do
+
+Note here that a video is represented above in the generator as (number of images, height, width, number of channels). Take this into consideration while creating the model architecture.
+
+curr_dt_time = datetime.datetime.now()
+train_path = 'Project_data/train'
+val_path = 'Project_data/val'
+
+num_train_sequences = len(train_doc)
+print('# training sequences =', num_train_sequences)
+num_val_sequences = len(val_doc)
+print('# validation sequences =', num_val_sequences)
+num_epochs = 30 # choose the number of epochs
+print ('# epochs =', num_epochs)
+
+# training sequences = 663
+# validation sequences = 100
+# epochs = 30
+
